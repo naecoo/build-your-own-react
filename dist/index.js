@@ -1,34 +1,24 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
-	typeof define === 'function' && define.amd ? define(factory) :
-	(global = typeof globalThis !== 'undefined' ? globalThis : global || self, global.Didact = factory());
-}(this, (function () { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
+	typeof define === 'function' && define.amd ? define(['exports'], factory) :
+	(global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.Didact = {}));
+}(this, (function (exports) { 'use strict';
 
-	function createElement(type, props, ...children) {
-		return {
-			type,
-			props: {
-				...props,
-				children: children.map((child) =>
-					typeof child === 'object' ? child : createTextElement(child)
-				)
-			}
-		};
-	}
+	const FIBER_TYPE = {
+		NODE: 1 << 0,
+		TEXT: 1 << 1,
+		FUNCTION: 1 << 2
+	};
 
-	function createTextElement(text) {
-		return {
-			type: 'TEXT_ELEMENT',
-			props: {
-				nodeValue: text,
-				children: []
-			}
-		};
-	}
+	const FIBER_EFFECT_TAG = {
+		PLACEMENT: 1 << 0,
+		UPDATE: 1 << 1,
+		DELETION: 1 << 2
+	};
 
 	function createDom(fiber) {
 		const dom =
-			fiber.type == 'TEXT_ELEMENT'
+			fiber.type == FIBER_TYPE.TEXT
 				? document.createTextNode('')
 				: document.createElement(fiber.type);
 
@@ -41,6 +31,7 @@
 	const isProperty = (key) => key !== 'children' && !isEvent(key);
 	const isNew = (prev, next) => (key) => prev[key] !== next[key];
 	const isGone = (prev, next) => (key) => !(key in next);
+
 	function updateDom(dom, prevProps, nextProps) {
 		//Remove old or changed event listeners
 		Object.keys(prevProps)
@@ -77,30 +68,10 @@
 			});
 	}
 
-	function commitRoot() {
-		deletions.forEach(commitWork);
-		commitWork(wipRoot.child);
-		currentRoot = wipRoot;
-		wipRoot = null;
-	}
-
-	function commitWork(fiber) {
-		if (!fiber) {
-			return;
-		}
-
-		const domParent = fiber.parent.dom;
-		if (fiber.effectTag === 'PLACEMENT' && fiber.dom != null) {
-			domParent.appendChild(fiber.dom);
-		} else if (fiber.effectTag === 'UPDATE' && fiber.dom != null) {
-			updateDom(fiber.dom, fiber.alternate.props, fiber.props);
-		} else if (fiber.effectTag === 'DELETION') {
-			domParent.removeChild(fiber.dom);
-		}
-
-		commitWork(fiber.child);
-		commitWork(fiber.sibling);
-	}
+	let currentRoot = null;
+	let wipRoot = null;
+	let nextUnitOfWork = null;
+	let deletions = null;
 
 	function render(element, container) {
 		wipRoot = {
@@ -114,13 +85,10 @@
 		nextUnitOfWork = wipRoot;
 	}
 
-	let nextUnitOfWork = null;
-	let currentRoot = null;
-	let wipRoot = null;
-	let deletions = null;
-
+	requestIdleCallback(workLoop);
 	function workLoop(deadline) {
 		let shouldYield = false;
+
 		while (nextUnitOfWork && !shouldYield) {
 			nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
 			shouldYield = deadline.timeRemaining() < 1;
@@ -133,8 +101,6 @@
 		requestIdleCallback(workLoop);
 	}
 
-	requestIdleCallback(workLoop);
-
 	function performUnitOfWork(fiber) {
 		if (!fiber.dom) {
 			fiber.dom = createDom(fiber);
@@ -143,9 +109,13 @@
 		const elements = fiber.props.children;
 		reconcileChildren(fiber, elements);
 
+	  // 处理子节点
 		if (fiber.child) {
 			return fiber.child;
 		}
+
+	  // todo: 为什么需要这一步？ 
+	  // 处理兄弟节点
 		let nextFiber = fiber;
 		while (nextFiber) {
 			if (nextFiber.sibling) {
@@ -153,6 +123,8 @@
 			}
 			nextFiber = nextFiber.parent;
 		}
+
+		return null;
 	}
 
 	function reconcileChildren(wipFiber, elements) {
@@ -173,7 +145,7 @@
 					dom: oldFiber.dom,
 					parent: wipFiber,
 					alternate: oldFiber,
-					effectTag: 'UPDATE'
+					effectTag: FIBER_EFFECT_TAG.UPDATE
 				};
 			}
 			if (element && !sameType) {
@@ -183,11 +155,11 @@
 					dom: null,
 					parent: wipFiber,
 					alternate: null,
-					effectTag: 'PLACEMENT'
+					effectTag: FIBER_EFFECT_TAG.PLACEMENT
 				};
 			}
 			if (oldFiber && !sameType) {
-				oldFiber.effectTag = 'DELETION';
+				oldFiber.effectTag = FIBER_EFFECT_TAG.DELETION;
 				deletions.push(oldFiber);
 			}
 
@@ -206,52 +178,119 @@
 		}
 	}
 
-	var index = {
-		createElement,
-		render
-	};
+	function commitRoot() {
+		deletions.forEach(commitWork);
+		commitWork(wipRoot.child);
+		currentRoot = wipRoot;
+		wipRoot = null;
+	}
 
-	// NOTE: demo
+	function commitWork(fiber) {
+		if (!fiber) return;
+
+		if (fiber.dom) {
+			const domParent = fiber.parent.dom;
+			switch (fiber.effectTag) {
+				case FIBER_EFFECT_TAG.PLACEMENT:
+					domParent.appendChild(fiber.dom);
+					break;
+
+				case FIBER_EFFECT_TAG.UPDATE:
+					updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+					break;
+
+				case FIBER_EFFECT_TAG.DELETION:
+					domParent.removeChild(fiber.dom);
+					break;
+			}
+		}
+
+		// todo: delete optimize
+		commitWork(fiber.child);
+		commitWork(fiber.sibling);
+	}
+
+	function createElement(type, props, ...children) {
+		return {
+			type,
+			props: {
+				...props,
+				children: children.map((child) =>
+					typeof child === 'object' ? child : createTextElement(child)
+				)
+			}
+		};
+	}
+
+	function createTextElement(text) {
+		return {
+			type: FIBER_TYPE.TEXT,
+			props: {
+				nodeValue: text,
+				children: []
+			}
+		};
+	}
+
+	// debug: demo
 	window.onload = () => {
-		let i = 1;
+		const todos = ['Finish homeworks'];
+
 		const rerender = () => {
 			const node = createElement(
 				'div',
 				null,
 
-				createElement('input', {
-					value: i
-				}),
-
-				createElement(
-					'button',
-					{
-						style: 'margin-left: 1em;',
-						onClick: () => {
-							--i;
-							rerender();
-						}
-					},
-					'-'
-				),
+				createElement('input', { id: 'input' }),
 
 				createElement(
 					'button',
 					{
 						style: 'margin-left: 4px;',
 						onClick: () => {
-							++i;
-							rerender();
+							const input = document.querySelector('input');
+							if (input && input.value) {
+								todos.push(input.value);
+								input.value = '';
+								rerender();
+							}
 						}
 					},
 					'+'
+				),
+
+				createElement(
+					'ol',
+					null,
+					...todos.map((todo, index) =>
+						createElement(
+							'li',
+							null,
+							todo,
+							createElement(
+								'span',
+								{
+									style: 'margin-left: 1em; color: red; cursor: pointer;',
+									onClick: () => {
+										todos.splice(index, 1);
+										rerender();
+									}
+								},
+								'x'
+							)
+						)
+					)
 				)
 			);
+
 			render(node, document.querySelector('#app'));
 		};
 		rerender();
 	};
 
-	return index;
+	exports.createElement = createElement;
+	exports.render = render;
+
+	Object.defineProperty(exports, '__esModule', { value: true });
 
 })));
