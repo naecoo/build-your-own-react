@@ -1,5 +1,6 @@
 import { createDom, updateDom } from './dom';
 import { FIBER_EFFECT_TAG } from './constants';
+import { isFunction } from './utils';
 
 let currentRoot = null;
 let wipRoot = null;
@@ -42,13 +43,12 @@ function performUnitOfWork(fiber) {
 	const elements = fiber.props.children;
 	reconcileChildren(fiber, elements);
 
-  // 处理子节点
+	// 处理子节点
 	if (fiber.child) {
 		return fiber.child;
 	}
 
-  // todo: 为什么需要这一步？ 
-  // 处理兄弟节点
+	// 处理兄弟节点
 	let nextFiber = fiber;
 	while (nextFiber) {
 		if (nextFiber.sibling) {

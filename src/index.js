@@ -4,8 +4,27 @@ import { createElement } from './fiber';
 export { render, createElement };
 
 // debug: demo
+
 window.onload = () => {
 	const todos = ['Finish homeworks'];
+
+	const Button = () => {
+		return createElement(
+			'button',
+			{
+				style: 'margin-left: 4px;',
+				onClick: () => {
+					const input = document.querySelector('input');
+					if (input && input.value) {
+						todos.push(input.value);
+						input.value = '';
+						rerender();
+					}
+				}
+			},
+			'+'
+		);
+	};
 
 	const rerender = () => {
 		const node = createElement(
@@ -14,21 +33,8 @@ window.onload = () => {
 
 			createElement('input', { id: 'input' }),
 
-			createElement(
-				'button',
-				{
-					style: 'margin-left: 4px;',
-					onClick: () => {
-						const input = document.querySelector('input');
-						if (input && input.value) {
-							todos.push(input.value);
-							input.value = '';
-							rerender();
-						}
-					}
-				},
-				'+'
-			),
+			// function component
+			Button(),
 
 			createElement(
 				'ol',
