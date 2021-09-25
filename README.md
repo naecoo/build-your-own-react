@@ -1,8 +1,11 @@
-https://pomb.us/build-your-own-react/
+## Docs:
 
-https://github.com/pomber/didact
+- https://pomb.us/build-your-own-react/
+- https://github.com/pomber/didact
 
-### todo
+
+## Todo:
+
 - function components
 - hooks, included useState and useEffect
 - override with typescript
